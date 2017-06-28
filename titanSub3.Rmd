@@ -1,0 +1,449 @@
+let's load the packages 
+
+```{r}
+library(dplyr)
+library(janitor)
+library(tidyr)
+```
+
+
+first load the relevant datasets
+
+```{r}
+load("./RDATA/titanic_test_sub2.RData")
+load("./RDATA/titanic_train.RData")
+
+```
+the above load was required because it was first time but after i worked a bit on it, instead of opening up the above  i can straight open the file
+
+	```{r lc, echo = FALSE }
+	    load("./RDATA/titanic_child.RData")
+	```
+
+let's dig into the age variable
+
+```{r}
+summary(titanic.train$Age)
+```
+
+let's create a variable whether he is child or not
+
+```{r}
+titanic.train$child <- 0
+titanic.train$child[titanic.train$Age < 18] <- 1
+```
+
+let's check how the child created with age NA
+
+```{r}
+titanic.train %>% 
+  filter(is.na(Age)) %>%
+  select(child,Age)
+```
+
+so the above makes sense since we will eventually replace age na with median value
+
+what we would want to check is survival between child and non-child
+
+```{r}
+prop.table(table(titanic.train$child,titanic.train$Survived,dnn = c("Child","Survive")),1)
+```
+
+the above cross table was created using prop table but i did not quite like it cause i don't like the bast R solution. 
+
+let me digress a bit and look into some alternatives
+
+```{r}
+titanic.train %>%
+  count(child,Survived) %>% 
+  group_by(child) %>%
+  mutate(prop=n/sum(n)) %>%
+  select(-n) %>%
+  spread(Survived,prop)
+```
+
+
+now there is a janitor package which is piping allowed and awesome
+
+```{r}
+#require(janitor)
+titanic.train %>%
+  crosstab(child, Survived) %>%
+  adorn_crosstab(digits=1,show_totals = F,show_n=F)
+```
+	
+
+
+but the strange thing above is that being child survival prob is not that high but it was really high when female, may be it will be for much younger 
+
+i forgot let me quickly check whether that was true
+
+```{r , echo = FALSE }
+titanic.train %>%
+    crosstab(Sex, Survived) %>% 
+    adorn_crosstab(digits=1, show_totals= F, show_n=F)
+```
+so in the above confirmed that being women it seems quite to survive than being child which is quite strange
+but we will check that out later, for now just let go with the things
+
+
+First let me replace missing age with median age
+
+at this point let first save the titatnic train file with all these changes
+
+```{r , echo = FALSE }
+
+titanic.train.sub3  <-   titanic.train
+save(titanic.train.sub3, file="./RDATA/ttrain_sub3.RData")
+```
+now time to do the actual replace operation
+
+so there are actually `{r sum(is.na(titanic.train.sub3$Age))}` number of missing values
+
+
+here we go
+
+```{r}
+titanic.train.sub3 <- titanic.train.sub3 %>%
+  mutate(Age=replace(Age,is.na(Age),median(Age,na.rm=T)))
+```
+
+but it seems that there might be a problem cause there must be earlier defined some child who have been assigned higher age
+let's check whether we get something like that or not
+
+```{r}
+titanic.train.sub3 %>%
+  filter(child==1,Age> 18)
+  
+```
+
+its not the case because none of the child had missing age
+
+
+
+Now what i do is that create a age wise category of survival
+
+```{r}
+titanic.child <- titanic.train.sub3 %>%
+  mutate(age_cat=cut(Age,
+                     breaks=c(seq(0,60,by=10),90),
+                     labels=paste(c(paste(seq(1,60,by=10),
+                                  seq(10,60,by=10),
+                                  sep="-"),"Above 60"),"years")))
+
+
+save(titanic.child,file="./RDATA/titanic_child.RData")
+```
+
+Now let's try to find an idea about the distribution of the age category
+
+
+```{r ac, echo = FALSE }
+    titanic.child %>% 
+	tabyl(age_cat)
+```			
+
+
+Now let's find the category of age and survival rate
+
+
+```{r}
+age.survive <- prop.table(table(titanic.child$age_cat,titanic.child$Survived),1)
+```
+
+can prop.table be transformed into matrix? turns out yes it is
+
+```{r}
+age.survive.mat <- as.matrix(age.survive)
+```
+
+yes it does, then can it go to df?
+
+```{r}
+as.data.frame(as.matrix(age.survive))
+```
+
+following is the way how to transform
+
+```{r}
+age.survive.mat <- as.matrix(age.survive)
+age.survive.df <- data.frame(NS=age.survive.mat[,1],S=age.survive.mat[,2])
+save(age.survive.df,file="./RDATA/age_survive_df.RData")
+```
+
+
+how to do the above with crosstab, let me try in the following 
+
+```{r , echo = FALSE }
+age.surv <- titanic.child %>%
+    crosstab(age_cat,Survived) %>%
+    adorn_crosstab(digits=1,show_totals=F,show_n=F)
+```
+
+
+Let's rename the Survived factor instead of 0 and 1
+
+```{r res, echo = FALSE }
+titanic.child =titanic.child %>%
+    mutate(Survived=factor(Survived))
+levels(titanic.child$Survived)=c("NS","S")
+```
+save titanic child once again
+
+```{r s2, echo = FALSE }
+save(titanic.child, file="./RDATA/titanic_child.RData")
+```
+now ggplot time
+
+```{r}
+#load("./RDATA/age_survive_df.RData")
+ggplot(age.surv,aes(x=age_cat,y=S))+
+  geom_bar(stat = "identity",fill="blue")
+
+```
+
+
+with additional variables, the titanic data set is saved in titanic_add.RData. So from now we can directly load it. 
+
+```{r}
+#load("./RDATA/titanic_add.RData")
+#load("./RDATA/age_survive_df.RData")
+```
+
+in the above even the titanic_add is used i would just use the titanic.child since in this new 
+round i have been using it
+
+so i will do the following
+
+```{r , echo = FALSE }
+titanic.add <- titanic.child
+```
+
+now i would like to see those who survived among them what is the age distribution
+
+```{r}
+ggplot(titanic.add,aes(x=age_cat,fill=as.character(Survived)))+geom_bar()
+
+```
+
+But the above correctly does not portray, b/c the child seems to be lowest but they may be lowest to start with, how aobut taking proportion
+
+```{r}
+ggplot(titanic.add,aes(x=age_cat,fill=as.character(Survived)))+
+  geom_bar(position="fill")
+```
+
+Now from the above it is quite obvious that younger age category has higher rate of survival, there is more than 50 percent 
+chance that some one survive if he/she belonged to 1-10 age category
+
+
+among the persons survived what is the male female ratio in different age-category?
+
+
+```{r}
+ggplot(filter(titanic.add,
+              Survived==1),aes(x=age_cat,fill=Sex))+
+  geom_bar(position="fill")
+```
+
+the above does not give us much of an information, in each categor female had higher chance of survival and being child female
+did not give any added advantage. 
+
+
+now moving into a little bit of off-topic, i just want to get hold of calculating proportion with dplyr. on the second thought, usual way doing n/sum sounds fine, there is that count function which is useful
+
+
+
+
+
+now let's look into other variables, there's one is SibSp number of sibilings present, now what i want to do quickly is 
+check if there was no siblings does the make prediction better or not
+
+```{r}
+titanic.add$sibling <- cut(titanic.add$SibSp,breaks = c(-1,0,8),labels = c("No siblings", "Has siblings"))
+```
+
+now check the proportion survived
+
+```{r}
+aggregate(Survived ~ sibling,data=titanic.add,mean)
+```
+the above is not working since all the variables have become  qualitative
+we do the same with dplyr version
+
+```{r}
+group_by(titanic.add,sibling) %>%
+  summarise(mean(Survived))
+  
+```
+ the above is also not working because of categorical variable
+
+its better idea to do this 
+
+
+```{r , echo = FALSE }
+titanic.add %>% 
+    crosstab(sibling,Survived) %>%
+	adorn_crosstab()
+```
+in the above we have find that those who have sibling has higher probability of survival
+
+
+let's have a look into Pclass variable which identifies different classes of tickets
+
+```{r}
+table(titanic.add$Pclass)
+```
+
+let's check the survival rate among these different classes
+
+```{r}
+group_by(titanic.add, Pclass,Survived) %>% 
+  summarise(N=n()) %>%
+  mutate(perc=N/sum(N))
+```
+
+I think a easier version will be
+
+```{r}
+group_by(titanic.add, Pclass) %>% 
+  summarise(perc=mean(Survived))
+```
+
+that's much cleaner with the same results
+
+anyway it seems someone with the third class has pretty low chance of surviving
+
+the above will not work because of categorical variable
+
+so the following will work
+
+```{r , echo = FALSE }
+titanic.add %>% 
+    crosstab(Pclass,Survived) %>%
+    adorn_crosstab()
+```
+so we see that class three has very low rate of survival
+
+now let's disaggregate this gender wise
+
+```{r}
+titanic.add %>%
+  count(Pclass,Sex) %>%
+  mutate(P=n/sum(n))
+```
+
+now the above is simply showing the proportion of male and female but what we want to know is survival in each category
+
+```{r}
+titanic.add %>%
+group_by( Pclass,Sex) %>% 
+  summarise(P=mean(Survived)) 
+  
+```
+
+now to be explicit i could be doing this
+
+```{r}
+titanic.add %>%
+count( Pclass,Sex,Survived) %>%
+group_by(Pclass,Sex) %>%
+mutate(tot=sum(n),
+       perc=n/tot) %>%
+filter(Survived=="S") %>%
+arrange(perc)
+
+```
+
+the above piece of code clearly shows that male or female, Pclass 3 has the lowes chance of survival,
+men were the lowest from Pclass 3
+
+
+in the above we find that the female in the 3rd class had lower chance of survival
+
+now have a look into fare variable, since it's a continuous variable its better to have a summary
+
+```{r}
+summary(titanic.add$Fare)
+```
+
+let's recode the variable
+
+```{r}
+titanic.add$Fare2 <- cut(titanic.add$Fare,
+                         breaks = c(-1,10,20,30,515), 
+                         labels = c("0-10","11-20","21-30","Above 30"))
+```
+
+Now let's have a look at distribution of survival in the fare category
+
+```{r}
+titanic.add %>%
+    count(Fare2, Survived) %>%
+group_by(Fare2) %>%
+mutate(tot=sum(n),
+       perc=n/tot) %>%
+filter(Survived=="S") 
+```
+
+In the above we find that lowest fare had the smallest chance of survival
+
+so let's disaggregate across gender
+
+```{r}
+titanic.add %>%
+    count(Fare2,Sex, Survived) %>%
+    group_by(Fare2) %>%
+    mutate(tot=sum(n),
+	   perc=n/tot) %>%
+    filter(Survived=="S") %>%
+    arrange(perc)
+```
+
+what we find here is that higher fare females has higher chance of survival
+than any other category, in general higher fare has higher chance
+
+
+if we try to visualize then it will be like this
+
+```{r}
+ggplot(titanic.add, aes(x=Fare2)) +
+  geom_bar(aes(fill=Sex),position="fill")
+```
+
+the above is not what i envisioned, the above just gender ratio in each Fare
+
+```{r}
+titanic.add %>%
+  group_by(Fare2,Sex) %>%
+  filter(!is.na(Fare2)) %>%
+  summarise(P=mean(Survived)) %>%
+  ggplot(.,aes(x=Fare2,y=P)) + geom_bar(stat = "identity",aes(fill=Sex),position = "dodge")
+```
+
+in the above we see both male and female has low category of survival
+
+now let's distribute the whole thing in terms of Pclass
+
+```{r}
+titanic.add %>%
+  group_by(Fare2,Pclass,Sex) %>%
+  filter(!is.na(Fare2)) %>%
+  summarise(N=n(),P=mean(Survived)) %>%
+  arrange(Sex,P)
+
+```
+
+Now time to save the data
+
+```{r}
+save(titanic.add, file="./RDATA/titanic_add.RData")
+```
+
+Update : 28-06-2017 00:37 ,  so far se have established that Fare and Pclass are important determinant
+along with child and being female
+titanic.add is the latest file with all the changes required. 
+
+
+
+

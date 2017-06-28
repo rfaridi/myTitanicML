@@ -1,0 +1,82 @@
+---
+title: "Titanic"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+require(dplyr)
+```
+
+```{r}
+load("./RDATA/titanic_train.RData")
+load("./RDATA/titanic_test.RData")
+```
+first check survival
+
+
+```{r}
+prop.table(table(titanic$Survived))
+```
+
+in the above, we see most of the died, so our best prediction is all died
+
+```{r}
+titanic.test$Survived <- 0
+submit <- data.frame(PassengerID=titanic.test$PassengerId,Survived=titanic.test$Survived)
+write.csv(submit,file="./SUBMIT/theyAllPerish.csv",row.names = F)
+```
+
+
+ another try
+let's see whether we can improve
+
+ disaster was famous for saving women and children, let's check what's happening with them
+
+
+```{r}
+prop.table(table(titanic$Sex))
+```
+
+what we find is that as 35% was female
+
+let's check how survived across male or female
+
+```{r}
+prop.table(table(titanic$Sex,titanic$Survived))
+```
+
+but that's not what we wanted, we rather want across row, so we do
+
+```{r}
+prop.table(table(titanic$Sex,titanic$Survived),1)
+```
+
+that's more like it. 
+
+so we think that most of females survived while males do not, so let's update with female all survived , just a crude prediction
+
+```{r}
+titanic.test$Survived[titanic.test$Sex=="female"] <- 1
+```
+
+let's just have a quick check whether it worked
+
+```{r}
+prop.table(table(titanic.test$Sex,titanic.test$Survived),1)
+```
+
+in the above, we see all the female survived and all the male perished. Let's make another submitssion
+
+```{r}
+submit <- data.frame(PassengerID=titanic.test$PassengerId,Survived=titanic.test$Survived)
+write.csv(submit,file="./SUBMIT/menAllPerish.csv",row.names = F)
+```
+
+
+
+
+
